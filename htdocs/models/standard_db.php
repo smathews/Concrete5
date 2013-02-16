@@ -77,25 +77,25 @@ class StandardDbObject extends Object {
     public function save()
     {
         $pk = $this->_getPrimaryKey();
+        $table = $this->_getTableName();
+
         try{
             $id = $this->getId();
         }
         catch(Exception $e)
         {
-            //do nothing we are saving.
-        }
-        $table = $this->_getTableName();
-
-        if(is_null($id))
-        {
+            //Must be saved first, so lets save.
             $this->insert();
         }
-        else
+
+        //wont be set if exception was thrown (which is what we want)
+        if(isset($id))
         {
             //normally we would expect if the pkey is populated that there is a row in the db
             //  but we need to allow the user to specify if they aren't using auto_increment
+            //  this might be a small performance hit.
             $db = Loader::db();
-            $res = $db->getRow("SELECT * FROM $table WHERE $pk = ?", array($id));
+            $res = $db->getRow("SELECT $pk FROM $table WHERE $pk = ?", array($id));
             
             if(count($res))
             {
@@ -229,17 +229,19 @@ SQL;
 
     private function update()
     {
-        $pk = $this->_getPrimaryKey();
-        $table = $this->_getTableName();
+        $table      = $this->_getTableName();
+        $properties = $this->_getDefaultProperties();
+        $pk         = $this->_getPrimaryKey();
+    
+        if(is_null($this->$pk))
+            unset($properties[$pk]);
 
         $set = array();$vals = array();
-        foreach($this->_getDefaultProperties() as $key => $default)
+        $columns = array_keys($properties);
+        foreach($columns as $property)
         {
-            if($key == $pk)
-                continue;
-
-            $set[]  = $key . " = ?";
-            $vals[] = $this->$key;
+            $set[]  = $property . " = ?";
+            $vals[] = $this->$property;
         }
 
         //value for primary key
@@ -251,9 +253,12 @@ SQL;
 
     private function insert()
     {
-        $table = $this->_getTableName();
+        $table      = $this->_getTableName();
         $properties = $this->_getDefaultProperties();
-        unset($properties[$this->_getPrimaryKey()]);
+        $pk         = $this->_getPrimaryKey();
+    
+        if(is_null($this->$pk))
+            unset($properties[$pk]);
 
         $vals = array();
         $columns = array_keys($properties);
@@ -266,8 +271,8 @@ SQL;
         $db->execute("INSERT INTO $table (" . join($columns, ',') . ") 
                         VALUES (" . join(array_fill(0, count($columns), '?'), ',') . ")", $vals);
 
-        $pk = $this->_getPrimaryKey();
-        $this->$pk = $db->Insert_ID();
+        if(is_null($this->$pk))
+            $this->$pk = $db->Insert_ID();
     }
 
 }
